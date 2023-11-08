@@ -126,3 +126,70 @@ Forward the prometheus-server service to the localhost port 8080
 `$ skupper gateway forward prometheus-server 8080`
 
 voila! `curl http://127.0.0.1:8080`
+
+## Connect prometheus with metrics running on different namespaces
+
+Clone the skupper example for prometheus `git clone https://github.com/skupperproject/skupper-example-prometheus.git`
+
+Start minikube and `minikube tunnel`
+
+This example connects different clusters, represented by different namespaces. Just implement the public one from the example.
+
+Start skupper on public1 namespace and create token for cluster connectivity; on *terminal1*
+```
+kubectl create namespace public1
+kubectl config set-context --current --namespace public1
+skupper init
+skupper token create public1-token.yaml --uses 2
+```
+
+Start skupper on public2 namespace and connect to public1
+```
+kubectl create namespace public2
+kubectl config set-context --current --namespace public2
+skupper init
+skupper token create public2-token.yaml
+skupper link create public1-token.yaml
+
+skupper link status
+```
+
+Add deployment for metric generation on *terminal1* `kubectl apply -f metrics-deployment-b.yaml`
+
+Add deployment for prometheus on *terminal2* `kubectl apply -f prometheus-deployment.yaml`
+
+On *terminal1* Expose metric service and add `app=metrics` label that is recognized by prometheus configuration
+```
+skupper expose deployment metrics-b --address metrics-b --port 8080 --protocol tcp --target-port 8080
+skupper service label metrics-b app=metrics
+```
+
+On *terminal2* expose prometheus service
+```
+skupper expose deployment prometheus --address prometheus --port 9090 --protocol http --target-port 9090
+```
+
+Confirm that it is available, `curl http://$(kubectl get service prometheus -o=jsonpath='{.spec.clusterIP}'):9090`
+
+To expose the prometheus to the host external interface, forward the prometheus service, note
+* There was an issue with the gateway, so I had to rebuild it
+* forward to 9090, do not use 8080 (it goes to some skupper hello world..)
+
+```
+skupper gateway delete
+skupper gateway init --type podman
+skupper gateway forward prometheus 8080
+```
+
+## Connect prometheus with metrics running on different server
+
+Add a new service to the public1 namespace to bind to the external server service
+```
+skupper service create metrics-timesten 8081
+skupper gateway bind metrics-timesten 10.140.1.30 9090
+```
+
+Add the label, so that the prometheus automatically updates its target `skupper service label metrics-timesten app=metrics`
+
+
+
