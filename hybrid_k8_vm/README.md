@@ -1,15 +1,16 @@
-# Create test k8 cluster
+# Exposing k8 services
 
-Create a VM on vCenter and add an interface on VLAN170 (testing).
+The goal here is to explore k8s services using minikube, and inter-connect services running on a k8s cluster with services running as on a dedicated VM.
 
-On the OS run,
+## Create test k8 cluster
+
+Create a minikube k8s cluster on a dedicated VM.
+
 ```
 curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && chmod +x minikube && sudo mv minikube /usr/local/bin/
 minikube start
-alias kubectl="minikube kubectl --"
+echo 'alias kubectl="minikube kubectl --"' >> ~/.bash_profile
 ```
-
-# Exposing k8 services
 
 ## Expose service locally
 
@@ -91,3 +92,37 @@ skupper gateway bind backend 10.110.1.30 8080
 ```
 
 Run `curl http://10.110.4.1:8080/api/health` from anywhere and expect `OK`
+
+
+# Implement Prometheus example
+
+The goal is to extend the first attempt, and deploy a prometheus environment capable of collecting metrics from services running in different namespaces and on dedicated VMs outside the k8 host.
+
+## Expose prometheus application on skupper gateway
+
+Install prometheus using the official helm charts. It will install on the "monitoring" namespace
+```
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install prometheus prometheus-community/prometheus
+```
+
+Change to the monitoring namespace `kubectl config set-context --current --namespace monitoring`
+
+If we were to expose it to other application running on a different namespace, the "standard" procedure would be. **DON'T RUN THIS**
+`$ kubectl expose service prometheus-server --type=NodePort --target-port=9090 --name=prometheus-server-np`
+
+However we do not want a NodePort service. We want to create a service via skupper and forward it to the localhost using the skupper gateway.
+
+Start by removing the ClusterIP service associated to prometheus-server
+`$ kubectl delete service/prometheus-server`
+
+Create a skupper service on port 80
+`$ skupper service create prometheus-server 80`
+
+Bind this service to the prometheus-server application running on port 9090
+`$ skupper service bind prometheus-server deployment/prometheus-server --target-port 9090`
+
+Forward the prometheus-server service to the localhost port 8080
+`$ skupper gateway forward prometheus-server 8080`
+
+voila! `curl http://127.0.0.1:8080`
