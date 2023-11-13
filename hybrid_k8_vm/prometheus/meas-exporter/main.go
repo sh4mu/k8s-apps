@@ -15,6 +15,10 @@ type MeasEntry struct {
 	value float64
 }
 
+func (m MeasEntry) String() string {
+	return fmt.Sprintf("MeasEntry{name: %s, value: %f}", m.name, m.value,)
+}
+
 // Definition of a metric made from a meas reading:
 // - desc, is a prometheus.Desc constant with the Metric description
 // - type, is the Metric type enum value CounterValue, GaugeValue
@@ -25,6 +29,10 @@ type MeasMetric struct {
 	label string 
 	desc *prometheus.Desc
 	value float64
+}
+
+func (m MeasMetric) String() string {
+	return fmt.Sprintf("MeasMetric{metric_type:%d, label:%s, desc:%s, value:%f", m.metric_type, m.label, m.desc, m.value)
 }
 
 // Interface for populating structured MeasEntry from meas data source
@@ -43,7 +51,7 @@ func (diameterFetcher DiameterMeasFetcher) GetMeasEntries() []MeasEntry {
 	// get name and Collation and map it to MeasEntry
 	
 	// Build sample data
-	measEntries := make([]MeasEntry, 10, 20)
+	measEntries := make([]MeasEntry, 8, 8)
 	measEntries[0] = MeasEntry { name: "avg_tm_ccr_rsp", value: 3000 }
 	measEntries[1] = MeasEntry { name: "min_tm_ccr_rsp", value: 2000 }
 	measEntries[2] = MeasEntry { name: "max_tm_ccr_rsp", value: 4000 }
@@ -51,9 +59,9 @@ func (diameterFetcher DiameterMeasFetcher) GetMeasEntries() []MeasEntry {
 	measEntries[4] = MeasEntry { name: "num_udr_sent", value: 30 }
 	measEntries[5] = MeasEntry { name: "num_cca_rcvd", value: 100 }
 	measEntries[6] = MeasEntry { name: "num_uda_rcvd", value: 30 }
-	measEntries[7] = MeasEntry { name: "num_succ_2xxx_rcvd", value: 120 }
-	measEntries[8] = MeasEntry { name: "num_err_3xxx_rcvd", value: 10 }
-	measEntries[9] = MeasEntry { name: "so_para_ver_se_chora", value: 10 }
+	// measEntries[7] = MeasEntry { name: "num_succ_2xxx_rcvd", value: 120 }
+	// measEntries[8] = MeasEntry { name: "num_err_3xxx_rcvd", value: 10 }
+	measEntries[7] = MeasEntry { name: "so_para_ver_se_chora", value: 10 }
 
 	return measEntries
 }
@@ -79,12 +87,12 @@ var (
 	diamSentMsg = prometheus.NewDesc(
 		"diamsch_sent_messages_total",
 		"Number diameter messages sent to the remote host.",
-		[]string{"type", "code"}, nil,
+		[]string{"type"}, nil,
 	)
 	diamRcvdMsg = prometheus.NewDesc(
 		"diamsch_received_messages_total",
 		"Number diameter messages received from the remote host.",
-		[]string{"type", "code"}, nil,
+		[]string{"type"}, nil,
 	)
 )
 
@@ -104,6 +112,8 @@ type DiameterMeasConverter struct {
 }
 
 func (measConv DiameterMeasConverter) CreateMetricFromEntry(entry MeasEntry) *MeasMetric {		
+	fmt.Printf("Creating MeasMetric from %s\n", entry)
+	
 	switch entry.name {
 	case "num_ccr_sent":
 		return &MeasMetric{ 
@@ -161,22 +171,22 @@ func (measConv DiameterMeasConverter) CreateMetricFromEntry(entry MeasEntry) *Me
 			label: "1xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_2xxx_rcvd":
+	case "num_succ_2xxx_rcvd":
 		return &MeasMetric{ desc: diamRcvdMsg, 
 			label: "2xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_3xxx_rcvd":
+	case "num_err_3xxx_rcvd":
 		return &MeasMetric{ desc: diamRcvdMsg, 
 			label: "3xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_4xxx_rcvd":
+	case "num_tran_4xxx_rcvd":
 		return &MeasMetric{ desc: diamRcvdMsg, 
 			label: "4xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_5xxx_rcvd":
+	case "num_perm_5xxx_rcvd":
 		return &MeasMetric{ desc: diamRcvdMsg, 
 			label: "5xxx", 
 			value: entry.value, 
@@ -186,47 +196,50 @@ func (measConv DiameterMeasConverter) CreateMetricFromEntry(entry MeasEntry) *Me
 			label: "1xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_2xxx_sent":
+	case "num_succ_2xxx_sent":
 		return &MeasMetric{ desc: diamSentMsg, 
 			label: "2xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_3xxx_sent":
+	case "num_err_3xxx_sent":
 		return &MeasMetric{ desc: diamSentMsg, 
 			label: "3xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_4xxx_sent":
+	case "num_tran_4xxx_sent":
 		return &MeasMetric{ desc: diamSentMsg, 
 			label: "4xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
-	case "num_info_5xxx_sent":
+	case "num_perm_5xxx_sent":
 		return &MeasMetric{ desc: diamSentMsg, 
 			label: "5xxx", 
 			value: entry.value, 
 			metric_type: prometheus.CounterValue }
 	}
 
-	return &MeasMetric{}
+	return nil
 }
 
 func (measConv DiameterMeasConverter) CreateMetricsFromTable() *[]MeasMetric {	
-	entries := measConv.diamFetcher.GetMeasEntries()
-	metrics := make([]MeasMetric, len(entries), cap(entries))
-
-	for _, entry := range entries {
+	//assumes all entries have values, though these may not match the converter rules
+	entries := measConv.diamFetcher.GetMeasEntries()	
+	
+	metrics := make([]MeasMetric, len(entries), cap(entries))	
+	n := 0
+	for i, entry := range entries {
 		m := measConv.CreateMetricFromEntry(entry)
 
-		if m.desc == nil {
-			continue
-		}
+		// When no metric is matched (nil), skip entry
+		// count non empty metrics
+		if m != nil {
+			fmt.Printf("Append metric %s \n", m)
+			metrics[i] = *m
+			n++
+		}		
+	}	
 
-		fmt.Printf("Append metric %s %f", m.desc, m.value)
-
-		metrics = append(metrics, *m)
-	}
-
+	metrics = metrics[:n]	
 	return &metrics
 }
 
